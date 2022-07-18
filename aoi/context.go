@@ -19,6 +19,9 @@ type Context struct {
 	Path   string
 	Method string
 
+	//存放请求参数信息
+	Params map[string]string
+
 	//响应码
 	StatusCode int
 }
@@ -59,7 +62,7 @@ func (c *Context) SetHeader(key string, value string) {
 func (c *Context) String(code int, format string, values ...interface{}) {
 	c.SetHeader("Content-Type", "text/plain")
 	c.Status(code)
-	c.Writer.Write([]byte(fmt.Sprintf(format, values)))
+	c.Writer.Write([]byte(fmt.Sprintf(format, values...)))
 }
 
 func (c *Context) JSON(code int, obj interface{}) {
@@ -80,4 +83,9 @@ func (c *Context) HTML(code int, html string) {
 	c.SetHeader("Content-Type", "text/html")
 	c.Status(code)
 	c.Writer.Write([]byte(html))
+}
+
+func (c *Context) Param(key string) string {
+	s := c.Params[key]
+	return s
 }

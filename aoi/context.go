@@ -28,6 +28,8 @@ type Context struct {
 	// 中间件相关参数
 	handlers []HandleFunc
 	index    int
+
+	engine *Engine
 }
 
 //newContext 创建并返回对应的上下文
@@ -84,12 +86,13 @@ func (c *Context) Data(code int, data []byte) {
 	c.Writer.Write(data)
 }
 
-func (c *Context) HTML(code int, html string) {
+func (c *Context) HTML(code int, name string, data interface{}) {
 	c.SetHeader("Content-Type", "text/html")
 	c.Status(code)
-	c.Writer.Write([]byte(html))
+	if err := c.engine.htmlTemplates.ExecuteTemplate(c.Writer, name, data); err != nil {
+		c.Data(500, []byte(err.Error()))
+	}
 }
-
 func (c *Context) Param(key string) string {
 	s := c.Params[key]
 	return s
@@ -102,4 +105,9 @@ func (c *Context) Next() {
 	for ; c.index < s; c.index++ {
 		c.handlers[c.index](c)
 	}
+}
+
+func (c *Context) Fail(serverError int, s string) {
+	c.Status(serverError)
+	c.Writer.Write([]byte(s))
 }

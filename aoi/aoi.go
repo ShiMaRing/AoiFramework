@@ -1,6 +1,7 @@
 package aoi
 
 import (
+	"html/template"
 	"net/http"
 	"strings"
 )
@@ -13,6 +14,9 @@ type Engine struct {
 	router       *router
 	*RouterGroup                //本身就作为一个routeGroup
 	groups       []*RouterGroup //存储所有的分组
+
+	htmlTemplates *template.Template // 添加html模板支持
+	funcMap       template.FuncMap   // 模板的渲染支持函数
 }
 
 func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -26,6 +30,7 @@ func (e *Engine) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	//需要开始配对
 	c := newContext(writer, request)
 	c.handlers = middlewares
+	c.engine = e
 	e.router.handle(c)
 }
 
@@ -42,4 +47,12 @@ func New() *Engine {
 
 func (e *Engine) Run(address string) error {
 	return http.ListenAndServe(address, e)
+}
+
+func (engine *Engine) SetFuncMap(funcMap template.FuncMap) {
+	engine.funcMap = funcMap
+}
+
+func (engine *Engine) LoadHTMLGlob(pattern string) {
+	engine.htmlTemplates = template.Must(template.New("").Funcs(engine.funcMap).ParseGlob(pattern))
 }

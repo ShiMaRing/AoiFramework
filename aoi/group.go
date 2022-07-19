@@ -1,5 +1,10 @@
 package aoi
 
+import (
+	"net/http"
+	"path"
+)
+
 // RouterGroup 提供分组功能
 type RouterGroup struct {
 	prefix      string       //分组前缀
@@ -39,4 +44,25 @@ func (group *RouterGroup) Group(prefix string) *RouterGroup {
 // Use 指定的group使用中间件
 func (group *RouterGroup) Use(middlewares ...HandleFunc) {
 	group.middlewares = append(group.middlewares, middlewares...)
+}
+
+//创建静态文件处理器，参数为相对路径以及文件系统
+func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandleFunc {
+	absolutePath := path.Join(group.prefix, relativePath) //拼接相对路径以及group的路径获得绝对路径
+	server := http.StripPrefix(absolutePath, http.FileServer(fs))
+	return func(c *Context) {
+		file := c.Param("filepath")
+		// Check if file exists and/or if we have permission to access it
+		if _, err := fs.Open(file); err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		server.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
+func (group *RouterGroup) Static(relativePath string, root string) {
+	handler := group.createStaticHandler(relativePath, http.Dir(root))
+	join := path.Join(relativePath, "/*filePath")
+	group.Get(join, handler)
 }

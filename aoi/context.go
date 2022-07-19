@@ -24,6 +24,10 @@ type Context struct {
 
 	//响应码
 	StatusCode int
+
+	// 中间件相关参数
+	handlers []HandleFunc
+	index    int
 }
 
 //newContext 创建并返回对应的上下文
@@ -33,6 +37,7 @@ func newContext(writer http.ResponseWriter, request *http.Request) *Context {
 		Request: request,
 		Path:    request.URL.Path,
 		Method:  request.Method,
+		index:   -1,
 	}
 }
 
@@ -88,4 +93,13 @@ func (c *Context) HTML(code int, html string) {
 func (c *Context) Param(key string) string {
 	s := c.Params[key]
 	return s
+}
+
+// Next 不断遍历交给下一个处理函数
+func (c *Context) Next() {
+	c.index++
+	s := len(c.handlers)
+	for ; c.index < s; c.index++ {
+		c.handlers[c.index](c)
+	}
 }

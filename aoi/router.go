@@ -55,10 +55,12 @@ func (r *router) handle(c *Context) {
 	if route != nil {
 		c.Params = m
 		key := c.Method + "-" + route.pattern //获取对应路由的key
-		r.handlers[key](c)
+		handleFunc := r.handlers[key]
+		c.handlers = append(c.handlers, handleFunc)
 	} else {
 		c.String(http.StatusNotFound, "404 NOT FOUND %s \n", c.Path)
 	}
+	c.Next()
 }
 
 func (r *router) getRoute(method string, path string) (*node, map[string]string) {

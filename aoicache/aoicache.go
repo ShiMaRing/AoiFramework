@@ -11,6 +11,7 @@ type Group struct {
 	name      string //group名称
 	getter    Getter //回调函数，查询不到数据时执行
 	mainCache cache  //提供数据支持
+	peers     PeerPicker
 }
 
 var (
@@ -55,9 +56,30 @@ func (g *Group) Get(key string) (Data, error) {
 }
 
 func (g *Group) load(key string) (Data, error) {
+	//此时本地已经没有缓存了，需要进行分布式请求
+	if g.peers != nil {
+		getter, ok := g.peers.PickPeer(key) //尝试获取客户端
+		if ok {                             //获取客户端成功，交给对应的客户端处理
+			peer, err := g.getFromPeer(getter, key)
+			if err == nil {
+				return peer, nil
+			}
+			log.Println("[GeeCache] Failed to get from peer", err)
+		}
+	}
 	return g.getByGetter(key)
 }
 
+//getFromPeer 远程获取数据
+func (g *Group) getFromPeer(peer PeerGetter, key string) (Data, error) {
+	data, err := peer.Get(g.name, key)
+	if err != nil {
+		return Data{}, err
+	}
+	return Data{bytes: clone(data)}, nil
+}
+
+//getByGetter 从本地指定的方法获取值
 func (g *Group) getByGetter(key string) (Data, error) {
 	bytes, err := g.getter.Get(key)
 	if err != nil {
@@ -69,4 +91,11 @@ func (g *Group) getByGetter(key string) (Data, error) {
 	g.mainCache.add(key, data) //得到的新值添加到cache中
 
 	return data, nil
+}
+
+func (g *Group) RegisterPeers(peers PeerPicker) {
+	if g.peers != nil {
+		panic("RegisterPeerPicker called more than once")
+	}
+	g.peers = peers
 }

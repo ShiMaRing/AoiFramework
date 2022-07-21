@@ -1,4 +1,4 @@
-package aoi
+package aoiweb
 
 import (
 	"encoding/json"

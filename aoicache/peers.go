@@ -8,5 +8,5 @@ type PeerPicker interface {
 //PeerGetter Get() 方法用于从对应 group 查找缓存值。
 //对应于上述流程中的 HTTP 客户端
 type PeerGetter interface {
-	Get(group string, key string) ([]byte, error)
+	Get(in *Request, out *Response) error
 }

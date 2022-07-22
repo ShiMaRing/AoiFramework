@@ -1,6 +1,7 @@
 package aoicache
 
 import (
+	"AoiFramework/aoicache/singleflight"
 	"fmt"
 	"log"
 	"sync"
@@ -12,6 +13,8 @@ type Group struct {
 	getter    Getter //回调函数，查询不到数据时执行
 	mainCache cache  //提供数据支持
 	peers     PeerPicker
+
+	loader *singleflight.Group
 }
 
 var (
@@ -30,6 +33,7 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 		name:      name,
 		getter:    getter,
 		mainCache: cache{cacheBytes: cacheBytes},
+		loader:    &singleflight.Group{},
 	}
 	groups[name] = group
 	return group
@@ -57,26 +61,37 @@ func (g *Group) Get(key string) (Data, error) {
 
 func (g *Group) load(key string) (Data, error) {
 	//此时本地已经没有缓存了，需要进行分布式请求
-	if g.peers != nil {
-		getter, ok := g.peers.PickPeer(key) //尝试获取客户端
-		if ok {                             //获取客户端成功，交给对应的客户端处理
-			peer, err := g.getFromPeer(getter, key)
-			if err == nil {
-				return peer, nil
+	data, err := g.loader.Do(key, func() (interface{}, error) {
+		if g.peers != nil {
+			getter, ok := g.peers.PickPeer(key) //尝试获取客户端
+			if ok {                             //获取客户端成功，交给对应的客户端处理
+				peer, err := g.getFromPeer(getter, key)
+				if err == nil {
+					return peer, nil
+				}
+				log.Println("[GeeCache] Failed to get from peer", err)
 			}
-			log.Println("[GeeCache] Failed to get from peer", err)
 		}
+		return g.getByGetter(key)
+	})
+	if err != nil {
+		return Data{}, err
 	}
-	return g.getByGetter(key)
+	return data.(Data), nil
 }
 
 //getFromPeer 远程获取数据
 func (g *Group) getFromPeer(peer PeerGetter, key string) (Data, error) {
-	data, err := peer.Get(g.name, key)
+	request := &Request{
+		Group: g.name,
+		Key:   key,
+	}
+	var res *Response
+	err := peer.Get(request, res)
 	if err != nil {
 		return Data{}, err
 	}
-	return Data{bytes: clone(data)}, nil
+	return Data{bytes: clone(res.Value)}, nil
 }
 
 //getByGetter 从本地指定的方法获取值

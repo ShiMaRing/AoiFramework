@@ -6,6 +6,7 @@ import (
 	"log"
 	"reflect"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -90,4 +91,16 @@ func TestHashing(t *testing.T) {
 		}
 	}
 
+}
+
+func TestWait(t *testing.T) {
+
+	group := sync.WaitGroup{}
+	group.Add(1)
+	for i := 0; i < 2; i++ {
+		go func() {
+			group.Wait()
+		}()
+	}
+	group.Wait()
 }

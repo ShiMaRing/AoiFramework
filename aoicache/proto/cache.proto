@@ -1,0 +1,16 @@
+syntax = "proto3";
+option  go_package = "./aoicache";
+
+package  aoicache;
+
+message request{
+  string group = 1;
+  string key = 2;
+}
+message response{
+  bytes value = 1;
+}
+service GroupCache{
+  rpc Get(request) returns (response);
+}
+

@@ -3,6 +3,7 @@ package aoicache
 import (
 	"AoiFramework/aoicache/consistenthash"
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"log"
 	"net/http"
 	"strings"
@@ -57,13 +58,17 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such group: "+groupName, http.StatusNotFound)
 		return
 	}
+
 	data, err := group.Get(key)
+
+	body, err := proto.Marshal(&Response{Value: data.ByteSlice()})
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Write(data.ByteSlice()) //返回复制的数组元素
+	w.Write(body) //返回复制的数组元素
 }
 
 // Set 根据传入的主机地址注册,避免读写同时进行，

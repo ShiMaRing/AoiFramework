@@ -2,6 +2,7 @@ package aoicache
 
 import (
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -13,27 +14,28 @@ type httpGetter struct {
 }
 
 // Get 客户端实现获取kv,服务器还需要实现响应的逻辑，进行分布式请求
-func (h *httpGetter) Get(group, key string) ([]byte, error) {
+func (h *httpGetter) Get(in *Request, out *Response) error {
 	//首先拼接url,使用url转义提高安全性，第一个不需要加因为会拼接上basePath
 	url := fmt.Sprintf("%v%v/%v",
-		h.baseURL, url.QueryEscape(group),
-		url.QueryEscape(key),
+		h.baseURL, url.QueryEscape(in.Group),
+		url.QueryEscape(in.Key),
 	)
 	res, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned: %v", res.Status)
+		return fmt.Errorf("server returned: %v", res.Status)
 	}
 
 	bytes, err := ioutil.ReadAll(res.Body)
 
-	if err != nil {
-		return nil, fmt.Errorf("reading response body: %v", err)
-	}
+	err = proto.Unmarshal(bytes, out)
 
-	return bytes, nil
+	if err != nil {
+		return fmt.Errorf("decoding response body: %v", err)
+	}
+	return nil
 }

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"AoiFramework/aoiorm/clause"
 	"AoiFramework/aoiorm/dialect"
 	"AoiFramework/aoiorm/olog"
 	"AoiFramework/aoiorm/schema"
@@ -9,12 +10,15 @@ import (
 )
 
 type Session struct {
-	db   *sql.DB
+	db *sql.DB
+
 	sql  strings.Builder
 	args []interface{}
 
 	dia      dialect.Dialect
 	refTable *schema.Schema
+
+	cla clause.Clause
 }
 
 // New 传入翻译器和数据源
@@ -49,6 +53,7 @@ func (s *Session) Exec() (result sql.Result, err error) {
 	}
 	return
 }
+
 func (s *Session) QueryRow() *sql.Row {
 	defer s.Clear()
 	olog.Info(s.sql.String(), s.args)

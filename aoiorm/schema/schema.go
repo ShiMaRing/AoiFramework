@@ -53,3 +53,14 @@ func Parse(dest interface{}, d dialect.Dialect) *Schema {
 	}
 	return schema
 }
+
+func (schema *Schema) RecordValues(dest interface{}) []interface{} {
+	//获取目的dst的value对象
+	indirect := reflect.Indirect(reflect.ValueOf(dest))
+	var args []interface{}
+	//根据保存的内容获取各个元素
+	for _, field := range schema.Fields { //从保存的模式中读取数据
+		args = append(args, indirect.FieldByName(field.Name).Interface())
+	}
+	return args
+}

@@ -7,20 +7,24 @@ import (
 
 type A struct {
 	name string
-	age  int
+	Age  int
 	sex  bool
 }
 
 func main() {
 	var a = A{
 		name: "hello",
+		Age:  102,
+		sex:  true,
 	}
 	hello(a)
 }
 
 func hello(a interface{}) {
-	t := reflect.Indirect(reflect.ValueOf(a)).Type()
-	fmt.Println(t.NumField())
+	t := reflect.Indirect(reflect.ValueOf(a))
+	fmt.Printf("%s \n", t.FieldByName("name"))
+	ageValue := t.FieldByName("Age")
+	fmt.Println(ageValue.Interface().(int))
 }
 
 func hello2(a interface{}) {

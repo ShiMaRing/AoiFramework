@@ -12,12 +12,13 @@ type A struct {
 }
 
 func main() {
-	var a = A{
+	fmt.Println(difference(nil, nil) == nil)
+	/*var a = A{
 		name: "hello",
 		Age:  102,
 		sex:  true,
 	}
-	hello(a)
+	hello(a)*/
 }
 
 func hello(a interface{}) {
@@ -30,4 +31,10 @@ func hello(a interface{}) {
 func hello2(a interface{}) {
 	t := reflect.ValueOf(a).Elem().Type()
 	fmt.Println(t.NumField())
+}
+
+//difference 返回 a-b
+func difference(a, b []string) (diff []string) {
+
+	return
 }

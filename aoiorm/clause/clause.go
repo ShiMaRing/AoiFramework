@@ -16,6 +16,9 @@ const (
 	LIMIT
 	WHERE
 	ORDERBY
+	UPDATE
+	DELETE
+	COUNT
 )
 
 func (c *Clause) Set(name Type, vars ...interface{}) {
@@ -38,5 +41,12 @@ func (c *Clause) Build(orders ...Type) (string, []interface{}) {
 		sqls = append(sqls, c.sql[order])
 		args = append(args, c.sqlVars[order]...)
 	}
+
+	//完成之后需要进行清空
+	defer func() {
+		c.sql = nil
+		c.sqlVars = nil
+	}()
+
 	return strings.Join(sqls, " "), args
 }

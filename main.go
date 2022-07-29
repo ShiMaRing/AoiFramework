@@ -1,40 +1,48 @@
 package main
 
 import (
+	geerpc "AoiFramework/aoirpc"
+	"AoiFramework/aoirpc/codec"
+	"encoding/json"
 	"fmt"
-	"reflect"
+	"log"
+	"net"
+	"time"
 )
 
-type A struct {
-	name string
-	Age  int
-	sex  bool
+func startServer(addr chan string) {
+	// pick a free port
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		log.Fatal("network error:", err)
+	}
+	log.Println("start rpc server on", l.Addr())
+	addr <- l.Addr().String()
+	geerpc.Accept(l)
 }
 
 func main() {
-	fmt.Println(difference(nil, nil) == nil)
-	/*var a = A{
-		name: "hello",
-		Age:  102,
-		sex:  true,
+	addr := make(chan string)
+	go startServer(addr)
+
+	// in fact, following code is like a simple geerpc client
+	conn, _ := net.Dial("tcp", <-addr)
+	defer func() { _ = conn.Close() }()
+
+	time.Sleep(time.Second)
+	// send options
+	_ = json.NewEncoder(conn).Encode(geerpc.DefaultOption)
+	cc := codec.NewGobCodec(conn)
+	// send request & receive response
+	for i := 0; i < 5; i++ {
+		h := &codec.Header{
+			ServiceMethod: "Foo.Sum",
+			Seq:           uint64(i),
+		}
+		_ = cc.Write(h, fmt.Sprintf("geerpc req %d", h.Seq))
+		_ = cc.ReadHeader(h)
+		var reply string
+		_ = cc.ReadBody(&reply)
+		log.Println("reply:", reply)
 	}
-	hello(a)*/
-}
-
-func hello(a interface{}) {
-	t := reflect.Indirect(reflect.ValueOf(a))
-	fmt.Printf("%s \n", t.FieldByName("name"))
-	ageValue := t.FieldByName("Age")
-	fmt.Println(ageValue.Interface().(int))
-}
-
-func hello2(a interface{}) {
-	t := reflect.ValueOf(a).Elem().Type()
-	fmt.Println(t.NumField())
-}
-
-//difference 返回 a-b
-func difference(a, b []string) (diff []string) {
-
-	return
 }

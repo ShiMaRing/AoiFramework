@@ -3,11 +3,13 @@ package aoirpc
 import (
 	"AoiFramework/aoirpc/codec"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"reflect"
+	"strings"
 	"sync"
 )
 
@@ -23,7 +25,9 @@ var DefaultOption = &Option{
 	CodecType:   codec.GobType,
 }
 
-type Server struct{}
+type Server struct {
+	serviceMap sync.Map
+}
 
 func NewServer() *Server {
 	return &Server{}
@@ -95,6 +99,9 @@ var invalidRequest = struct{}{}
 type request struct {
 	h            *codec.Header // header of request
 	argv, replyv reflect.Value // argv and replyv of request
+
+	mtype *methodType //指示方法
+	svc   *service    //服务
 }
 
 func (server *Server) readReqHeader(c codec.Codec) (*codec.Header, error) {
@@ -119,9 +126,23 @@ func (server *Server) readRequest(cc codec.Codec) (*request, error) {
 	req := &request{
 		h: header,
 	}
-	//暂时认为是string
-	req.argv = reflect.New(reflect.TypeOf(""))
-	if err = cc.ReadBody(req.argv.Interface()); err != nil {
+	//header中保存有相关的信息
+	findService, mtype, err := server.findService(req.h.ServiceMethod)
+	req.svc = findService
+	req.mtype = mtype
+	if err != nil {
+		return req, err
+	}
+	req.argv = mtype.newArgv()
+	req.replyv = mtype.newReplyv()
+
+	argvi := req.argv.Interface()
+
+	if req.argv.Type().Kind() != reflect.Pointer {
+		argvi = req.argv.Addr().Interface()
+	}
+
+	if err = cc.ReadBody(argvi); err != nil {
 		log.Println("rpc server: read argv err:", err)
 		return req, err
 	}
@@ -138,8 +159,49 @@ func (server *Server) sendResponse(c codec.Codec, h *codec.Header, r interface{}
 
 func (server *Server) handleReq(c codec.Codec, req *request, lock *sync.Mutex, wg *sync.WaitGroup) {
 	defer wg.Done()
-	log.Println(req.h, req.argv.Elem()) //获取实例对象
-	//简单回复字符串
-	req.replyv = reflect.ValueOf(fmt.Sprintf("aoiServer resp %d", req.h.Seq))
+
+	err := req.svc.call(req.mtype, req.argv, req.replyv)
+
+	if err != nil {
+		req.h.Error = err.Error()
+		server.sendResponse(c, req.h, invalidRequest, lock)
+		return
+	}
+
+	fmt.Printf("get rpc %v %v \n", req.argv, *req.replyv.Interface().(*int))
+
 	server.sendResponse(c, req.h, req.replyv.Interface(), lock)
+}
+
+func (server *Server) Register(rcvr interface{}) error {
+	s := newService(rcvr)
+	if _, dup := server.serviceMap.LoadOrStore(s.name, s); dup {
+		return errors.New("rpc: service already defined: " + s.name)
+	}
+	return nil
+}
+
+func Register(rcvr interface{}) error {
+	return DefaultServer.Register(rcvr)
+}
+
+func (server *Server) findService(serviceMethod string) (svc *service, mtype *methodType, err error) {
+	//根据传入的A.B()获取函数
+	index := strings.LastIndex(serviceMethod, ".")
+	if index == -1 {
+		err = errors.New("rpc server: service/method request ill-formed: " + serviceMethod)
+		return
+	}
+	serviceName, methodName := serviceMethod[:index], serviceMethod[index+1:]
+	load, ok := server.serviceMap.Load(serviceName)
+	if !ok {
+		err = errors.New("rpc server: can't find service " + serviceName)
+		return
+	}
+	svc = load.(*service)
+	mtype = svc.methods[methodName]
+	if mtype == nil {
+		err = errors.New("rpc server: can't find method " + methodName)
+	}
+	return
 }

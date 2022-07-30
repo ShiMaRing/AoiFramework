@@ -43,7 +43,7 @@ func (g *GobCodec) Write(header *Header, body interface{}) (err error) {
 	defer func() {
 		_ = g.buf.Flush()
 		if err != nil {
-			g.Close()
+			_ = g.Close()
 		}
 	}()
 	if err = g.enc.Encode(header); err != nil {
@@ -55,4 +55,5 @@ func (g *GobCodec) Write(header *Header, body interface{}) (err error) {
 		return
 	}
 	return nil
+
 }

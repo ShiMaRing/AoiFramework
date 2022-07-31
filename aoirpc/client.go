@@ -2,12 +2,14 @@ package aoirpc
 
 import (
 	"AoiFramework/aoirpc/codec"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 /*the method’s type is exported.
@@ -182,28 +184,70 @@ func parseOptions(opts ...*Option) (*Option, error) {
 
 // Dial 拨号方法
 func Dial(network, address string, opts ...*Option) (client *Client, err error) {
-	option, err := parseOptions(opts...)
-	if err != nil {
-		return nil, err
-	}
-	dial, err := net.Dial(network, address)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if client == nil {
-			_ = dial.Close()
-		}
+	return dialTimeout(NewClient, network, address, opts...)
+}
 
+type clientResult struct {
+	client *Client
+	err    error
+}
+
+type newClientFunc func(conn net.Conn, opt *Option) (client *Client, err error)
+
+func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (client *Client, err error) {
+	opt, err := parseOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.DialTimeout(network, address, opt.ConnectionTimeout)
+	if err != nil {
+		return nil, err
+	}
+	finish := make(chan struct{})
+	defer close(finish)
+	defer func() {
+		if err != nil {
+			_ = conn.Close()
+		}
 	}()
-	return NewClient(dial, option)
+	//获取客户端
+	resultChan := make(chan clientResult)
+	go func() {
+		c, e := f(conn, opt)
+		select {
+		case <-finish:
+			close(resultChan)
+		case resultChan <- clientResult{
+			client: c,
+			err:    e,
+		}:
+			return
+		}
+	}()
+	if opt.ConnectionTimeout == 0 {
+		result := <-resultChan
+		return result.client, result.err
+	}
+	select {
+	case <-time.After(opt.ConnectionTimeout):
+		return nil, fmt.Errorf("connect time out error")
+	case result := <-resultChan:
+		return result.client, result.err
+	}
+
 }
 
 // Call 异步等待
-func (c *Client) Call(serviceMethod string, args, reply interface{}) error {
-	var call *Call
-	call = <-c.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
+func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
+	call := c.Go(serviceMethod, args, reply, make(chan *Call, 1))
+	select {
+	case <-ctx.Done():
+		//超时
+		c.removeCall(call.Seq)
+		return errors.New("rpc client: call failed: " + ctx.Err().Error())
+	case c := <-call.Done:
+		return c.Error
+	}
 }
 
 func (c *Client) Go(method string, args interface{}, reply interface{}, calls chan *Call) *Call {

@@ -11,18 +11,23 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 const MagicNumber = 0x3bef5c //magic number marks a aoirpc request
 
 type Option struct {
-	MagicNumber int        //标识请求
-	CodecType   codec.Type //请求类型
+	MagicNumber       int        //标识请求
+	CodecType         codec.Type //请求类型
+	ConnectionTimeout time.Duration
+	HandleTimeout     time.Duration
 }
 
 var DefaultOption = &Option{
-	MagicNumber: MagicNumber,
-	CodecType:   codec.GobType,
+	MagicNumber:       MagicNumber,
+	CodecType:         codec.GobType,
+	ConnectionTimeout: 5 * time.Second,
+	HandleTimeout:     5 * time.Second,
 }
 
 type Server struct {
@@ -54,6 +59,8 @@ func Accept(lis net.Listener) {
 	DefaultServer.Accept(lis)
 }
 
+var handleTimeout time.Duration
+
 func (server *Server) ServeConn(conn net.Conn) {
 	defer func() {
 		_ = conn.Close()
@@ -64,6 +71,7 @@ func (server *Server) ServeConn(conn net.Conn) {
 		log.Println("rpc server: options error: ", err)
 		return
 	}
+	handleTimeout = opt.HandleTimeout
 	if opt.MagicNumber != MagicNumber {
 		log.Printf("rpc server: invalid magic number %x", opt.MagicNumber)
 		return
@@ -90,7 +98,7 @@ func (server *Server) serveCode(c codec.Codec) { //设置锁，避免重复
 			continue
 		}
 		wg.Add(1)
-		go server.handleReq(c, req, lock, wg)
+		go server.handleReq(c, req, lock, wg, handleTimeout)
 	}
 }
 
@@ -157,20 +165,47 @@ func (server *Server) sendResponse(c codec.Codec, h *codec.Header, r interface{}
 	}
 }
 
-func (server *Server) handleReq(c codec.Codec, req *request, lock *sync.Mutex, wg *sync.WaitGroup) {
+func (server *Server) handleReq(c codec.Codec, req *request, lock *sync.Mutex, wg *sync.WaitGroup, handleTimeout time.Duration) {
 	defer wg.Done()
+	//定义called和sent chan
+	var called = make(chan struct{})
+	var sent = make(chan struct{})
 
-	err := req.svc.call(req.mtype, req.argv, req.replyv)
+	var finish = make(chan struct{})
+	defer close(finish)
 
-	if err != nil {
-		req.h.Error = err.Error()
-		server.sendResponse(c, req.h, invalidRequest, lock)
+	go func() {
+		err := req.svc.call(req.mtype, req.argv, req.replyv)
+		select {
+		case <-finish:
+			close(called)
+			close(sent)
+			return
+		case called <- struct{}{}:
+			if err != nil {
+				req.h.Error = err.Error()
+				server.sendResponse(c, req.h, invalidRequest, lock)
+				sent <- struct{}{}
+				return
+			}
+			server.sendResponse(c, req.h, req.replyv.Interface(), lock)
+			sent <- struct{}{}
+		}
+	}()
+
+	if handleTimeout == 0 {
+		<-called
+		<-sent
 		return
 	}
 
-	fmt.Printf("get rpc index: %d %v %v \n", req.h.Seq, req.argv, *req.replyv.Interface().(*int))
-
-	server.sendResponse(c, req.h, req.replyv.Interface(), lock)
+	select {
+	case <-time.After(handleTimeout):
+		req.h.Error = fmt.Sprintf("rpc server: request handle timeout: expect within %s", handleTimeout)
+		server.sendResponse(c, req.h, invalidRequest, lock)
+	case <-called:
+		<-sent
+	}
 }
 
 func (server *Server) Register(rcvr interface{}) error {

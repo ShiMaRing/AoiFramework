@@ -74,7 +74,7 @@ func (c *Client) registerCall(call *Call) (uint64, error) {
 	call.Seq = c.seq
 	c.pending[c.seq] = call
 	c.seq++
-	return c.seq, nil
+	return call.Seq, nil
 }
 
 //保护map并发
@@ -112,6 +112,7 @@ func (c *Client) receive() {
 		//否则就认为正确收到了头返回值
 		call := c.removeCall(h.Seq)
 
+		/*		fmt.Println("sql:", h.Seq)*/
 		switch {
 		case call == nil:
 			//这是一个错误的call传值
@@ -228,6 +229,7 @@ func (c *Client) send(call *Call) {
 	defer c.sending.Unlock()
 
 	registerCall, err := c.registerCall(call)
+
 	if err != nil {
 		call.Error = err
 		call.done()

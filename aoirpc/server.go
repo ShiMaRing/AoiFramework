@@ -168,7 +168,7 @@ func (server *Server) handleReq(c codec.Codec, req *request, lock *sync.Mutex, w
 		return
 	}
 
-	fmt.Printf("get rpc %v %v \n", req.argv, *req.replyv.Interface().(*int))
+	fmt.Printf("get rpc index: %d %v %v \n", req.h.Seq, req.argv, *req.replyv.Interface().(*int))
 
 	server.sendResponse(c, req.h, req.replyv.Interface(), lock)
 }

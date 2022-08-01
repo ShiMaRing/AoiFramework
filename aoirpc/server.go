@@ -8,13 +8,19 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 )
 
-const MagicNumber = 0x3bef5c //magic number marks a aoirpc request
+const (
+	MagicNumber      = 0x3bef5c //magic number marks a aoirpc request
+	connected        = "200 Connected to Aoi RPC"
+	defaultRPCPath   = "/aoirpc"
+	defaultDebugPath = "/debug/aoirpc"
+)
 
 type Option struct {
 	MagicNumber       int        //标识请求
@@ -238,5 +244,33 @@ func (server *Server) findService(serviceMethod string) (svc *service, mtype *me
 	if mtype == nil {
 		err = errors.New("rpc server: can't find method " + methodName)
 	}
+
 	return
+}
+
+//实现handler接口
+func (server *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	//检测是否为connect方法请求
+	if req.Method != http.MethodConnect {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, "405 must CONNECT\n")
+		return
+	}
+	//劫持这个响应流，不再自动关闭，不再具有http方法
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		log.Print("rpc hijacking ", req.RemoteAddr, ": ", err.Error())
+		return
+	}
+	_, _ = io.WriteString(conn, "HTTP/1.0 "+connected+"\n\n")
+	server.ServeConn(conn)
+}
+
+func (server *Server) HandleHttp() {
+	http.Handle(defaultDebugPath, server)
+}
+
+func HandleHTTP() {
+	DefaultServer.HandleHTTP()
 }

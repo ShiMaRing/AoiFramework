@@ -2,12 +2,16 @@ package aoirpc
 
 import (
 	"AoiFramework/aoirpc/codec"
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -195,16 +199,22 @@ type clientResult struct {
 type newClientFunc func(conn net.Conn, opt *Option) (client *Client, err error)
 
 func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (client *Client, err error) {
+
 	opt, err := parseOptions(opts...)
+
+	fmt.Println("opt.ConnectionTimeout: ", opt.ConnectionTimeout)
 	if err != nil {
 		return nil, err
 	}
+
 	conn, err := net.DialTimeout(network, address, opt.ConnectionTimeout)
+
 	if err != nil {
 		return nil, err
 	}
 	finish := make(chan struct{})
 	defer close(finish)
+
 	defer func() {
 		if err != nil {
 			_ = conn.Close()
@@ -213,7 +223,12 @@ func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (cli
 	//获取客户端
 	resultChan := make(chan clientResult)
 	go func() {
+		now := time.Now()
 		c, e := f(conn, opt)
+
+		if e != nil {
+			log.Printf("cost time %v \n", time.Since(now))
+		}
 		select {
 		case <-finish:
 			close(resultChan)
@@ -224,13 +239,14 @@ func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (cli
 			return
 		}
 	}()
+
 	if opt.ConnectionTimeout == 0 {
 		result := <-resultChan
 		return result.client, result.err
 	}
 	select {
 	case <-time.After(opt.ConnectionTimeout):
-		return nil, fmt.Errorf("connect time out error")
+		return nil, fmt.Errorf("connect timeout error")
 	case result := <-resultChan:
 		return result.client, result.err
 	}
@@ -290,5 +306,44 @@ func (c *Client) send(call *Call) {
 			call.Error = err
 			call.done()
 		}
+	}
+}
+
+//客户端需要发起连接请求
+func NewHTTPClient(conn net.Conn, opt *Option) (client *Client, err error) {
+	//获取的是tcp连接，先发送http请求，然后发opt
+	//首先发送http请求
+	n, err := io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", defaultRPCPath))
+
+	fmt.Println(n, " ", err)
+	response, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+
+	if err == nil && response.Status == connected {
+		return NewClient(conn, opt)
+	}
+	//说明连接出现错误
+	if err == nil {
+		err = errors.New("unexpected HTTP response: " + response.Status)
+	}
+	return nil, err
+}
+
+func DialHTTP(network, address string, opts ...*Option) (*Client, error) {
+	return dialTimeout(NewHTTPClient, network, address, opts...)
+}
+
+// XDial 给出统一调用接口
+func XDial(rpcAddr string, opts ...*Option) (*Client, error) {
+	//协议解析
+	split := strings.Split(rpcAddr, "@")
+	if len(split) != 2 {
+		return nil, fmt.Errorf("rpc client err: wrong format '%s', expect protocol@addr", rpcAddr)
+	}
+	proc, addr := split[0], split[1] //获取协议和地址
+	switch proc {
+	case "http":
+		return DialHTTP("tcp", addr, opts...)
+	default:
+		return Dial(proc, addr, opts...)
 	}
 }

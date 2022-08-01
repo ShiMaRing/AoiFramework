@@ -32,8 +32,8 @@ type Option struct {
 var DefaultOption = &Option{
 	MagicNumber:       MagicNumber,
 	CodecType:         codec.GobType,
-	ConnectionTimeout: 5 * time.Second,
-	HandleTimeout:     5 * time.Second,
+	ConnectionTimeout: 10 * time.Second,
+	HandleTimeout:     10 * time.Second,
 }
 
 type Server struct {

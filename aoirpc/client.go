@@ -202,7 +202,6 @@ func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (cli
 
 	opt, err := parseOptions(opts...)
 
-	fmt.Println("opt.ConnectionTimeout: ", opt.ConnectionTimeout)
 	if err != nil {
 		return nil, err
 	}
